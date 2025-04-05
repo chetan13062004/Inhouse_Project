@@ -8,7 +8,7 @@ export default async function OnboardingPage() {
   const { isOnboarded } = await getUserOnboardingStatus();
 
   if (isOnboarded) {
-    redirect("/dashboard");
+    redirect("/virtual-dashboard");
   }
 
   return (
