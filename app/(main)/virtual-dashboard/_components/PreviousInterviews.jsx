@@ -3,81 +3,91 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { db } from '@/utils/db';
 import { MockInterview, UserAnswer } from '@/utils/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { Star, Calendar, ArrowRight, Video, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useUser } from '@clerk/nextjs';
 
 const PreviousInterviews = () => {
   const [interviews, setInterviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
   const router = useRouter();
+  const { user } = useUser();
 
   useEffect(() => {
-    const fetchInterviews = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch all mock interviews
-        const mockInterviews = await db.select().from(MockInterview)
-          .orderBy(desc(MockInterview.createdAt))
-          .limit(6);
-        
-        // For each interview, get the average rating and count of answers
-        const interviewsWithStats = await Promise.all(
-          mockInterviews.map(async (interview) => {
-            // Get answers for this interview
-            const answers = await db.select().from(UserAnswer)
-              .where(eq(UserAnswer.mockidRef, interview.mockId));
-            
-            // Calculate average rating
-            let totalRating = 0;
-            let validAnswers = 0;
-            
-            answers.forEach(answer => {
-              try {
-                const feedback = JSON.parse(answer.feedback);
-                if (feedback && feedback.rating && answer.userAns && answer.userAns.trim().length > 10) {
-                  totalRating += feedback.rating;
-                  validAnswers++;
-                }
-              } catch (e) {
-                console.error("Error parsing feedback:", e);
-              }
-            });
-            
-            const avgRating = validAnswers > 0 ? (totalRating / validAnswers).toFixed(1) : "N/A";
-            
-            // Parse the questions to get the count
-            let questionCount = 0;
-            try {
-              const questions = JSON.parse(interview.jsonMockResp);
-              questionCount = questions.length;
-            } catch (e) {
-              console.error("Error parsing questions:", e);
-            }
-            
-            return {
-              ...interview,
-              avgRating,
-              answeredCount: answers.length,
-              totalQuestions: questionCount,
-              completionPercentage: questionCount > 0 ? 
-                Math.round((answers.length / questionCount) * 100) : 0
-            };
-          })
-        );
-        
-        setInterviews(interviewsWithStats);
-      } catch (error) {
-        console.error("Error fetching interviews:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (user) {
+      fetchInterviews();
+    }
+  }, [user]);
+
+  const fetchInterviews = async () => {
+    if (!user) return;
     
-    fetchInterviews();
-  }, []);
+    try {
+      setLoading(true);
+      
+      // Get current user's email
+      const userEmail = user.primaryEmailAddress.emailAddress;
+      
+      // Fetch only mock interviews created by the current user
+      const mockInterviews = await db.select().from(MockInterview)
+        .where(eq(MockInterview.createdBy, userEmail))
+        .orderBy(desc(MockInterview.createdAt))
+        .limit(6);
+      
+      // For each interview, get the average rating and count of answers
+      const interviewsWithStats = await Promise.all(
+        mockInterviews.map(async (interview) => {
+          // Get answers for this interview
+          const answers = await db.select().from(UserAnswer)
+            .where(eq(UserAnswer.mockidRef, interview.mockId));
+          
+          // Calculate average rating
+          let totalRating = 0;
+          let validAnswers = 0;
+          
+          answers.forEach(answer => {
+            try {
+              const feedback = JSON.parse(answer.feedback);
+              if (feedback && feedback.rating && answer.userAns && answer.userAns.trim().length > 10) {
+                totalRating += feedback.rating;
+                validAnswers++;
+              }
+            } catch (e) {
+              console.error("Error parsing feedback:", e);
+            }
+          });
+          
+          const avgRating = validAnswers > 0 ? (totalRating / validAnswers).toFixed(1) : "N/A";
+          
+          // Parse the questions to get the count
+          let questionCount = 0;
+          try {
+            const questions = JSON.parse(interview.jsonMockResp);
+            questionCount = questions.length;
+          } catch (e) {
+            console.error("Error parsing questions:", e);
+          }
+          
+          return {
+            ...interview,
+            avgRating,
+            answeredCount: answers.length,
+            totalQuestions: questionCount,
+            completionPercentage: questionCount > 0 ? 
+              Math.round((answers.length / questionCount) * 100) : 0
+          };
+        })
+      );
+      
+      setInterviews(interviewsWithStats);
+    } catch (error) {
+      console.error("Error fetching interviews:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleViewFeedback = (interviewId) => {
     router.push(`/virtual-dashboard/interview/${interviewId}/feedback`);
@@ -132,6 +142,17 @@ const PreviousInterviews = () => {
     );
   }
 
+  if (!user) {
+    return (
+      <div className="mt-8">
+        <h3 className="text-xl font-semibold mb-4">Previous Interviews</h3>
+        <div className="bg-white rounded-lg shadow-md p-6 text-center">
+          <p className="text-gray-500">Please sign in to view your interviews.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (interviews.length === 0) {
     return (
       <div className="mt-8">
@@ -167,7 +188,7 @@ const PreviousInterviews = () => {
             </button>
             
             <div className="p-6">
-              <h4 className="font-semibold text-lg mb-2">{interview.role} Interview</h4>
+              <h4 className="font-semibold text-lg mb-2">{interview.jobPosition} Interview</h4>
               
               <div className="flex items-center text-sm text-gray-500 mb-3">
                 <Calendar className="h-4 w-4 mr-1" />
