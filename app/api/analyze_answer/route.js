@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getGeminiResponse } from '@/utils/gemini';
-
+import { getGeminiResponse } from '@/utils/GeminiAiModel';
 export async function POST(request) {
   try {
     const { question, answer } = await request.json();
